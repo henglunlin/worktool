@@ -1,7 +1,7 @@
 import streamlit as st
 
 # 設定主頁的網頁標題與 Layout
-st.set_page_config(page_title="Alan 上班偷懶小程式", page_icon="😎", layout="wide")
+st.set_page_config(page_title="Alan 上班偷懶小程式", page_icon="🦼", layout="wide")
 
 # 主頁標題
 st.title("🚀 Alan 上班偷懶小程式")
