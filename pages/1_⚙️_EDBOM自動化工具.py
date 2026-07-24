@@ -11,7 +11,7 @@ import math
 import traceback
 import copy
 from collections import defaultdict 
-import requests  # 👈 新增這行：用來從網路上抓取檔案
+import requests  # 用來從網路上抓取檔案
 
 # =====================================================
 # ✅ Streamlit UI 設定與 Session State 初始化
@@ -44,6 +44,24 @@ with st.expander("📖 點此查看工具使用說明與檔案用途", expanded=
     * **RLC_result.xlsx (補料成功清單)**：記錄系統自動從 `RLClist.xlsx` 中成功找到並補齊屬性資料的新增料件。
     * **RLC_NotFound.xlsx (完全找不到的料件)**：⚠️ **需人工處理**。記錄既不在原始 BOM 裡，也無法從 RLClist 中找到的料件，代表系統無法取得該料號的詳細資訊。
     """)
+    
+    # --- 將下載按鈕移至說明欄位內 ---
+    st.markdown("---")
+    st.markdown("### 📥 下載範例檔案")
+    example_file_url = "https://raw.githubusercontent.com/henglunlin/worktool/main/EDlist_example.xlsx"
+    
+    try:
+        response = requests.get(example_file_url)
+        response.raise_for_status() # 檢查是否成功取得檔案
+        st.download_button(
+            label="下載 EDlist 範例檔",
+            data=response.content,
+            file_name="EDlist_example.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    except requests.exceptions.RequestException as e:
+        st.error("無法取得範例檔案。請確認 GitHub 網址或網路連線。")
+
 
 if "run_complete" not in st.session_state:
     st.session_state.run_complete = False
@@ -238,25 +256,6 @@ def get_col_data(df, col_name, default_val):
 # ✅ 側邊欄：檔案上傳與解析
 # =====================================================
 st.sidebar.header("📂 檔案上傳與解析")
-
-# 👈 新增的下載範例檔案區塊
-st.sidebar.markdown("### 📥 下載範例檔案")
-# 已將 github 網頁連結轉換為 raw 原始檔連結
-example_file_url = "https://raw.githubusercontent.com/henglunlin/worktool/main/EDlist_example.xlsx"
-
-try:
-    response = requests.get(example_file_url)
-    response.raise_for_status() # 檢查是否成功取得檔案
-    st.sidebar.download_button(
-        label="下載 EDlist 範例檔",
-        data=response.content,
-        file_name="EDlist_example.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-except requests.exceptions.RequestException as e:
-    st.sidebar.error("無法取得範例檔案。請確認 GitHub 網址或網路連線。")
-st.sidebar.markdown("---")
-# ---------------------------------------------
 
 st.sidebar.info("💡 上傳檔案後，請點擊下方按鈕來讀取與解析表頭欄位。")
 
