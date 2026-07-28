@@ -58,8 +58,6 @@ st.markdown(
         min-height: 4.2rem !important;
         overflow: visible !important;
     }
-    [data-testid="stSidebar"] { display: none; }
-    [data-testid="collapsedControl"] { display: none; }
     .floating-toolbar-label {
         font-weight: 700;
         font-size: 0.95rem;
