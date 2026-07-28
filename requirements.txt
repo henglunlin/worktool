@@ -5,3 +5,7 @@ xlrd
 xlsxwriter
 Pillow
 requests
+kaleido
+plotly
+scikit-rf
+numpy
