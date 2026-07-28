@@ -5,7 +5,7 @@ xlrd
 xlsxwriter
 Pillow
 requests
-kaleido
+kaleido>=1.0.0
 plotly
 scikit-rf
 numpy
