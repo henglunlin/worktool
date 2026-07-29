@@ -151,7 +151,27 @@ CHANNEL_ROLES = {
 }
 
 # 目標值的預設值（可在 UI 上手動調整/覆蓋，這裡只是建表時的初始值）
-DEFAULT_ROLE_TARGET = {"tx": 23.0, "rx": -101.0}  # TRP 預設 23 dB / TIS 預設 -101 dBm
+# 各 Function 獨立預設目標值
+# tx = TRP / 發射目標值
+# rx = TIS / 接收目標值
+DEFAULT_ROLE_TARGET_BY_MODE = {
+    "WWAN": {
+        "tx": 23.0,     # WWAN TRP 目標值
+        "rx": -101.0,   # WWAN TIS 目標值
+    },
+    "WLAN": {
+        "tx": 17.0,     # WLAN TRP / TX 目標值，可自行改
+        "rx": -97.0,    # WLAN TIS / RX sensitivity 目標值，可自行改
+    },
+}
+
+# 保留舊名稱，避免其他舊 function 還有引用 DEFAULT_ROLE_TARGET 時出錯
+DEFAULT_ROLE_TARGET = DEFAULT_ROLE_TARGET_BY_MODE["WWAN"]
+
+
+def get_default_role_target(mode_key: str) -> dict:
+    """依 WWAN / WLAN 回傳各自的 tx/rx 預設目標值。"""
+    return dict(DEFAULT_ROLE_TARGET_BY_MODE.get(mode_key, DEFAULT_ROLE_TARGET_BY_MODE["WWAN"]))
 
 
 def channel_role_label(mode_key: str, channel: str) -> str:
@@ -286,7 +306,7 @@ def build_compensation_frame(
     default_targets：可選，依角色（"tx"/"rx"）指定目標值的初始值。
     沒有指定的話，TX（TRP）預設 23、RX（TIS）預設 -101，之後仍可在表格內手動修改。
     """
-    targets = dict(DEFAULT_ROLE_TARGET)
+    targets = get_default_role_target(mode_key)
     if default_targets:
         targets.update(default_targets)
 
@@ -433,13 +453,86 @@ def parse_mvo5_result_csv(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def load_frequency_list(freq_df: pd.DataFrame) -> pd.DataFrame:
-    """整理 Frequency List Excel，標準化欄位名稱為 Band / Channel / Frequency / Role。
+    """整理 Frequency List / Freq table，標準化為補償邏輯可使用的表格。
 
-    來源欄位預期為：Band, Channel, Frequency (MHz), TX/RX（欄位名稱大小寫/空白容忍度較高）。
-    Role 會標準化成大寫的 "RX" / "TX" / "TXRX"。
+    支援兩種來源格式：
+    1. Freq List sheet：Band / Channel / Frequency (MHz) / TX/RX
+       - 會輸出 Band / Channel / Frequency / Role。
+    2. Freq table sheet：Band / Uplink Channel / Uplink Frequency(MHz) /
+       Downlink channel / Downlink Frequency(MHz)
+       - 會展開成 TX / RX 兩筆資料，並保留 Pair 欄位，讓 MVO5 只有 UL channel
+         時也能同時找到對應的 TX freq 與 RX freq。
     """
+    raw = freq_df.copy()
+
+    def norm_col(c):
+        return str(c).strip().lower().replace(" ", "").replace("_", "").replace("/", "")
+
+    cols_norm = {norm_col(c): c for c in raw.columns}
+
+    # ----- Freq table 格式：用 UL channel 對應 TX freq，同時帶出 DL channel / RX freq -----
+    has_freq_table = (
+        "uplinkchannel" in cols_norm
+        and ("uplinkfrequencymhz" in cols_norm or "uplinkfrequency(mhz)" in cols_norm)
+        and "downlinkchannel" in cols_norm
+        and ("downlinkfrequencymhz" in cols_norm or "downlinkfrequency(mhz)" in cols_norm)
+    )
+    if has_freq_table:
+        band_col = cols_norm.get("band")
+        func_col = cols_norm.get("function")
+        ul_ch_col = cols_norm["uplinkchannel"]
+        ul_freq_col = cols_norm.get("uplinkfrequencymhz") or cols_norm.get("uplinkfrequency(mhz)")
+        dl_ch_col = cols_norm["downlinkchannel"]
+        dl_freq_col = cols_norm.get("downlinkfrequencymhz") or cols_norm.get("downlinkfrequency(mhz)")
+        if band_col is None:
+            raise ValueError("Freq table 缺少必要欄位：Band")
+
+        rows = []
+        for _, r in raw.iterrows():
+            band = str(r.get(band_col, "")).strip()
+            if not band or band.lower() == "nan":
+                continue
+            function = str(r.get(func_col, "")).strip().upper() if func_col else ""
+            ul_ch = pd.to_numeric(r.get(ul_ch_col), errors="coerce")
+            ul_freq = pd.to_numeric(r.get(ul_freq_col), errors="coerce")
+            dl_ch = pd.to_numeric(r.get(dl_ch_col), errors="coerce")
+            dl_freq = pd.to_numeric(r.get(dl_freq_col), errors="coerce")
+            if pd.isna(ul_ch) or pd.isna(ul_freq) or pd.isna(dl_ch) or pd.isna(dl_freq):
+                continue
+
+            ul_ch = int(ul_ch)
+            dl_ch = int(dl_ch)
+            ul_freq = float(ul_freq)
+            dl_freq = float(dl_freq)
+
+            # TDD：UL/DL 同頻同 channel，視為 TXRX 一筆即可，避免同頻重複列。
+            is_tdd = function == "TDD" or (ul_ch == dl_ch and normalize_freq(ul_freq) == normalize_freq(dl_freq))
+            if is_tdd:
+                rows.append({
+                    "Function": function or "TDD", "Band": band, "Channel": ul_ch, "Frequency": ul_freq, "Role": "TXRX",
+                    "PairKey": f"{band}_{ul_ch}", "UplinkChannel": ul_ch, "UplinkFrequency": ul_freq,
+                    "DownlinkChannel": dl_ch, "DownlinkFrequency": dl_freq, "SourceTable": "Freq table",
+                })
+            else:
+                rows.append({
+                    "Function": function or "FDD", "Band": band, "Channel": ul_ch, "Frequency": ul_freq, "Role": "TX",
+                    "PairKey": f"{band}_{ul_ch}", "UplinkChannel": ul_ch, "UplinkFrequency": ul_freq,
+                    "DownlinkChannel": dl_ch, "DownlinkFrequency": dl_freq, "SourceTable": "Freq table",
+                })
+                rows.append({
+                    "Function": function or "FDD", "Band": band, "Channel": dl_ch, "Frequency": dl_freq, "Role": "RX",
+                    "PairKey": f"{band}_{ul_ch}", "UplinkChannel": ul_ch, "UplinkFrequency": ul_freq,
+                    "DownlinkChannel": dl_ch, "DownlinkFrequency": dl_freq, "SourceTable": "Freq table",
+                })
+
+        out = pd.DataFrame(rows)
+        if out.empty:
+            raise ValueError("Freq table 沒有可用的 Band / UL / DL 頻率資料。")
+        return out.reset_index(drop=True)
+
+    # ----- 原本 Freq List 格式 -----
     colmap = {}
-    for c in freq_df.columns:
+    for c in raw.columns:
         cs = str(c).strip()
         if cs.lower().startswith("frequency"):
             colmap[c] = "Frequency"
@@ -447,7 +540,7 @@ def load_frequency_list(freq_df: pd.DataFrame) -> pd.DataFrame:
             colmap[c] = "Role"
         else:
             colmap[c] = cs
-    out = freq_df.rename(columns=colmap).copy()
+    out = raw.rename(columns=colmap).copy()
 
     required = ["Band", "Channel", "Frequency", "Role"]
     missing = [c for c in required if c not in out.columns]
@@ -460,8 +553,32 @@ def load_frequency_list(freq_df: pd.DataFrame) -> pd.DataFrame:
     out["Channel"] = out["Channel"].astype("int64")
     out["Frequency"] = pd.to_numeric(out["Frequency"], errors="coerce")
     out["Role"] = out["Role"].astype(str).str.strip().str.upper()
-    return out[["Band", "Channel", "Frequency", "Role"]].reset_index(drop=True)
+    out["Function"] = out["Function"].astype(str).str.strip().str.upper() if "Function" in out.columns else ""
+    out["SourceTable"] = "Freq List"
+    return out[[c for c in ["Function", "Band", "Channel", "Frequency", "Role", "SourceTable"] if c in out.columns]].reset_index(drop=True)
 
+
+def read_frequency_list_excel(file_or_path) -> pd.DataFrame:
+    """讀取 Frequency List Excel；若有 Freq table sheet，優先使用它。"""
+    sheets = pd.read_excel(file_or_path, engine="openpyxl", sheet_name=None)
+    if not sheets:
+        raise ValueError("Frequency List Excel 沒有任何工作表。")
+
+    # 使用者這次需求指定要查看 Freq table，因此優先找名稱含 freq table 的 sheet。
+    preferred_names = [name for name in sheets if str(name).strip().lower().replace(" ", "") == "freqtable"]
+    if not preferred_names:
+        preferred_names = [name for name in sheets if "freq" in str(name).strip().lower() and "table" in str(name).strip().lower()]
+    if preferred_names:
+        return load_frequency_list(sheets[preferred_names[0]])
+
+    # 沒有 Freq table 時，退回第一個可成功解析的 sheet。
+    last_error = None
+    for _, df in sheets.items():
+        try:
+            return load_frequency_list(df)
+        except Exception as e:
+            last_error = e
+    raise ValueError(f"找不到可解析的 Frequency List / Freq table 工作表：{last_error}")
 
 def _band_number(band: str) -> float:
     """從 'B71' 這種字串取出數字部分，方便比較 Band 大小；解析失敗回傳 inf（視為最大，排到最後）。"""
@@ -490,39 +607,33 @@ def build_mvo5_compensation_table(
     targets: "dict[str, float] | None" = None,
     band_list: "list[str] | None" = None,
 ) -> pd.DataFrame:
-    """把 MVO5 測試結果依 Channel 查 Frequency List，取得 Frequency / Role，
-    再依角色計算 Diff / 補償後 Loss，回傳可供預覽（含 Band 欄位）與勾選的表格。
+    """依 Band List + Freq table + MVO5 Result 建立補償表。
 
-    band_list：可選。若提供（例如從 Bandlist.txt 解析出的 ["B1", "B2"]），代表這次只需要
-      補償這幾個 Band，會先用它分別篩選 freq_list_df 與 mvo5_df，只保留這些 Band 的資料再比對，
-      而不是掃描 Frequency List / MVO5 CSV 裡的全部 Band。當 Band 數量遠少於 Frequency List
-      涵蓋的 Band 數時，可大幅縮小比對範圍、加快處理速度，也讓輸出的補償表只包含關心的 Band。
-      不提供（None）時維持原本行為：使用 MVO5 CSV 裡出現的所有 Band。
+    新邏輯：
+    - 若 band_list 有指定（例如 Bandlist.txt 只有 B1、B2），先只鎖定這些 Band。
+    - 以 MVO5 測試報告中的 Band + Channel（通常為 UL channel）去 Freq table 查表。
+    - FDD：同一筆測試結果會拆成兩個補償點：
+        * TX：使用 Uplink Frequency，Measured 使用 Description 裡的 Tx power(TRP)，更新 Main1_UL。
+        * RX：使用 Downlink Frequency，Measured 使用 Result(TIS)，更新 Main1_DL。
+    - TDD/TXRX：同頻時用同一個 Frequency，同時試算 DL/UL。
 
-    輸出欄位：Band, Channel, Frequency, Role,
-      Main1_DL_OriginalLoss/Target/Measured/Diff/CompLoss,
-      Main1_UL_OriginalLoss/Target/Measured/Diff/CompLoss,
-      Overlap（是否與其他 Band 共用同一個 Frequency）, Selected（預設勾選狀態）。
+    若沒有 Freq table 的 Pair 欄位，會自動退回舊版 Frequency List 行為：依 Channel 找 Frequency/Role。
     """
-    targets_ = dict(DEFAULT_ROLE_TARGET)
+    targets_ = get_default_role_target("WWAN")
     if targets:
         targets_.update(targets)
 
-    # 若指定了 Band 清單，先縮小 Frequency List 與 MVO5 測試結果的範圍到這幾個 Band。
     freq_list_df = filter_by_band_list(freq_list_df, band_list, band_col="Band")
     mvo5_df = filter_by_band_list(mvo5_df, band_list, band_col="Band")
 
     if band_list and freq_list_df.empty:
         raise ValueError(
-            f"Band List {band_list} 在 Frequency List 中找不到對應的 Band，請確認拼字或 Frequency List 內容。"
+            f"Band List {band_list} 在 Frequency List / Freq table 中找不到對應的 Band，請確認拼字或表格內容。"
         )
     if band_list and mvo5_df.empty:
         raise ValueError(
-            f"Band List {band_list} 在 MVO5 測試結果 CSV 中找不到對應的 Band，請確認測試結果檔案內容。"
+            f"Band List {band_list} 在 MVO5 測試結果中找不到對應的 Band，請確認測試結果檔案內容。"
         )
-
-    # Channel 在 Frequency List 中應為唯一值，直接用 Channel 查表（Band 僅作為顯示/比對用）。
-    freq_lookup = freq_list_df.drop_duplicates("Channel", keep="last").set_index("Channel")
 
     work = working_df.copy()
     work["_norm_freq"] = work["Frequency"].apply(normalize_freq)
@@ -534,54 +645,118 @@ def build_mvo5_compensation_table(
         v = orig_lookup.loc[norm_freq].get(ch)
         return float(v) if pd.notna(v) else None
 
+    def empty_channel_values(row: dict, ch: str):
+        row.update({
+            f"{ch}_OriginalLoss": None,
+            f"{ch}_Target": None,
+            f"{ch}_Measured": None,
+            f"{ch}_Diff": None,
+            f"{ch}_CompLoss": None,
+        })
+
+    def fill_channel_values(row: dict, norm_freq: str, ch: str, role_key: str, measured):
+        ol = orig_loss(norm_freq, ch)
+        target = targets_[role_key]
+        if pd.notna(measured):
+            measured_f = float(measured)
+            diff = compute_diff(role_key, target, measured_f)
+            comp = compute_compensated_loss(ol, diff) if ol is not None else None
+            row.update({
+                f"{ch}_OriginalLoss": ol,
+                f"{ch}_Target": target,
+                f"{ch}_Measured": measured_f,
+                f"{ch}_Diff": diff,
+                f"{ch}_CompLoss": comp,
+            })
+        else:
+            row.update({
+                f"{ch}_OriginalLoss": ol,
+                f"{ch}_Target": target,
+                f"{ch}_Measured": None,
+                f"{ch}_Diff": None,
+                f"{ch}_CompLoss": None,
+            })
+
     rows = []
-    for _, r in mvo5_df.iterrows():
-        channel = int(r["Channel"])
-        if channel not in freq_lookup.index:
-            continue
-        fl = freq_lookup.loc[channel]
-        freq_val = float(fl["Frequency"])
-        role = str(fl["Role"]).upper()
-        norm_freq = normalize_freq(freq_val)
+    has_pair_table = {"UplinkChannel", "UplinkFrequency", "DownlinkChannel", "DownlinkFrequency"}.issubset(freq_list_df.columns)
 
-        row = {
-            "Band": r["Band"],
-            "Channel": channel,
-            "Frequency": freq_val,
-            "Role": role,
-        }
+    if has_pair_table:
+        pair_df = freq_list_df.drop_duplicates(["Band", "UplinkChannel"], keep="last").copy()
+        pair_df["_band_norm"] = pair_df["Band"].astype(str).str.strip().str.upper()
+        pair_df["_ul_ch"] = pd.to_numeric(pair_df["UplinkChannel"], errors="coerce")
+        pair_df = pair_df.dropna(subset=["_ul_ch"])
+        pair_df["_ul_ch"] = pair_df["_ul_ch"].astype("int64")
+        pair_lookup = pair_df.set_index(["_band_norm", "_ul_ch"])
 
-        dl_ol = orig_loss(norm_freq, "Main1_DL")
-        if role in ("RX", "TXRX") and pd.notna(r.get("TIS")):
-            measured = float(r["TIS"])
-            diff = compute_diff("rx", targets_["rx"], measured)
-            comp = compute_compensated_loss(dl_ol, diff) if dl_ol is not None else None
-            row.update({
-                "Main1_DL_OriginalLoss": dl_ol, "Main1_DL_Target": targets_["rx"],
-                "Main1_DL_Measured": measured, "Main1_DL_Diff": diff, "Main1_DL_CompLoss": comp,
-            })
-        else:
-            row.update({
-                "Main1_DL_OriginalLoss": dl_ol, "Main1_DL_Target": None,
-                "Main1_DL_Measured": None, "Main1_DL_Diff": None, "Main1_DL_CompLoss": None,
-            })
+        for _, r in mvo5_df.iterrows():
+            band = str(r["Band"]).strip()
+            band_norm = band.upper()
+            channel = int(r["Channel"])
+            if (band_norm, channel) not in pair_lookup.index:
+                # 有些報告可能剛好是 DL channel；再退一步用 DownlinkChannel 找 pair。
+                dl_match = pair_df[(pair_df["_band_norm"] == band_norm) & (pd.to_numeric(pair_df["DownlinkChannel"], errors="coerce") == channel)]
+                if dl_match.empty:
+                    continue
+                fl = dl_match.iloc[0]
+            else:
+                fl = pair_lookup.loc[(band_norm, channel)]
+                if isinstance(fl, pd.DataFrame):
+                    fl = fl.iloc[0]
 
-        ul_ol = orig_loss(norm_freq, "Main1_UL")
-        if role in ("TX", "TXRX") and pd.notna(r.get("TRP")):
-            measured = float(r["TRP"])
-            diff = compute_diff("tx", targets_["tx"], measured)
-            comp = compute_compensated_loss(ul_ol, diff) if ul_ol is not None else None
-            row.update({
-                "Main1_UL_OriginalLoss": ul_ol, "Main1_UL_Target": targets_["tx"],
-                "Main1_UL_Measured": measured, "Main1_UL_Diff": diff, "Main1_UL_CompLoss": comp,
-            })
-        else:
-            row.update({
-                "Main1_UL_OriginalLoss": ul_ol, "Main1_UL_Target": None,
-                "Main1_UL_Measured": None, "Main1_UL_Diff": None, "Main1_UL_CompLoss": None,
-            })
+            function = str(fl.get("Function", "")).upper()
+            ul_freq = float(fl["UplinkFrequency"])
+            dl_freq = float(fl["DownlinkFrequency"])
+            ul_channel = int(fl["UplinkChannel"])
+            dl_channel = int(fl["DownlinkChannel"])
+            is_tdd = function == "TDD" or (ul_channel == dl_channel and normalize_freq(ul_freq) == normalize_freq(dl_freq))
 
-        rows.append(row)
+            if is_tdd:
+                norm_freq = normalize_freq(ul_freq)
+                row = {"Band": band, "Channel": ul_channel, "Frequency": ul_freq, "Role": "TXRX", "SourceChannel": channel}
+                fill_channel_values(row, norm_freq, "Main1_DL", "rx", r.get("TIS"))
+                fill_channel_values(row, norm_freq, "Main1_UL", "tx", r.get("TRP"))
+                rows.append(row)
+            else:
+                # TX / UL：取 Uplink Frequency，用 TRP 補 Main1_UL。
+                norm_ul = normalize_freq(ul_freq)
+                tx_row = {"Band": band, "Channel": ul_channel, "Frequency": ul_freq, "Role": "TX", "SourceChannel": channel}
+                empty_channel_values(tx_row, "Main1_DL")
+                fill_channel_values(tx_row, norm_ul, "Main1_UL", "tx", r.get("TRP"))
+                rows.append(tx_row)
+
+                # RX / DL：取 Downlink Frequency，用 TIS 補 Main1_DL。
+                norm_dl = normalize_freq(dl_freq)
+                rx_row = {"Band": band, "Channel": dl_channel, "Frequency": dl_freq, "Role": "RX", "SourceChannel": channel}
+                fill_channel_values(rx_row, norm_dl, "Main1_DL", "rx", r.get("TIS"))
+                empty_channel_values(rx_row, "Main1_UL")
+                rows.append(rx_row)
+    else:
+        # 舊版 fallback：Frequency List 只有 Channel / Frequency / Role，依 Channel 直接找。
+        freq_lookup = freq_list_df.drop_duplicates(["Band", "Channel"], keep="last").copy()
+        freq_lookup["_band_norm"] = freq_lookup["Band"].astype(str).str.strip().str.upper()
+        freq_lookup = freq_lookup.set_index(["_band_norm", "Channel"])
+
+        for _, r in mvo5_df.iterrows():
+            band = str(r["Band"]).strip()
+            key = (band.upper(), int(r["Channel"]))
+            if key not in freq_lookup.index:
+                continue
+            fl = freq_lookup.loc[key]
+            if isinstance(fl, pd.DataFrame):
+                fl = fl.iloc[0]
+            freq_val = float(fl["Frequency"])
+            role = str(fl["Role"]).upper()
+            norm_freq = normalize_freq(freq_val)
+            row = {"Band": band, "Channel": int(r["Channel"]), "Frequency": freq_val, "Role": role}
+            if role in ("RX", "TXRX"):
+                fill_channel_values(row, norm_freq, "Main1_DL", "rx", r.get("TIS"))
+            else:
+                empty_channel_values(row, "Main1_DL")
+            if role in ("TX", "TXRX"):
+                fill_channel_values(row, norm_freq, "Main1_UL", "tx", r.get("TRP"))
+            else:
+                empty_channel_values(row, "Main1_UL")
+            rows.append(row)
 
     result = pd.DataFrame(rows)
     if result.empty:
@@ -589,7 +764,9 @@ def build_mvo5_compensation_table(
             result[c] = []
         return result
 
-    # 頻率重疊處理：同一個 Frequency 若對應到多個不同 Band，預設只勾選 Band 數字最小的那筆。
+    # 同一 Band / Frequency / Role 可能來自重複資料，先去重。
+    result = result.drop_duplicates(["Band", "Frequency", "Role"], keep="last").copy()
+
     result["_freq_norm"] = result["Frequency"].apply(normalize_freq)
     result["_band_num"] = result["Band"].apply(_band_number)
 
@@ -603,9 +780,8 @@ def build_mvo5_compensation_table(
     )
 
     result = result.drop(columns=["_freq_norm", "_band_num"])
-    result = result.sort_values(["Frequency", "Band"]).reset_index(drop=True)
-    return result
-
+    sort_cols = [c for c in ["Band", "Frequency", "Role"] if c in result.columns]
+    return result.sort_values(sort_cols).reset_index(drop=True)
 
 def apply_mvo5_compensation_to_working(
     working_df: pd.DataFrame, mvo5_comp_df: pd.DataFrame
@@ -1093,7 +1269,7 @@ def parse_wlan_result_csv(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_wlan_compensation_table(wlan_result_df: pd.DataFrame, freq_list_df: pd.DataFrame, working_df: pd.DataFrame, targets: "dict[str, float] | None" = None, band_list: "list[dict] | None" = None) -> pd.DataFrame:
-    targets_ = dict(DEFAULT_ROLE_TARGET)
+    targets_ = get_default_role_target("WLAN")
     if targets:
         targets_.update(targets)
     freq = freq_list_df.copy()
@@ -1225,8 +1401,7 @@ with st.sidebar:
             if mode_key == "WLAN":
                 freq_list_df = read_wlan_frequency_list_excel(freq_list_upload)
             else:
-                freq_list_raw = pd.read_excel(freq_list_upload, engine="openpyxl")
-                freq_list_df = load_frequency_list(freq_list_raw)
+                freq_list_df = read_frequency_list_excel(freq_list_upload)
             freq_list_source_label = f"已上傳：{freq_list_upload.name}"
         except Exception as e:
             freq_list_error = f"無法讀取上傳的 Frequency List：{e}"
@@ -1235,8 +1410,7 @@ with st.sidebar:
             if mode_key == "WLAN":
                 freq_list_df = read_wlan_frequency_list_excel(default_freq_list_path)
             else:
-                freq_list_raw = pd.read_excel(default_freq_list_path, engine="openpyxl")
-                freq_list_df = load_frequency_list(freq_list_raw)
+                freq_list_df = read_frequency_list_excel(default_freq_list_path)
             freq_list_source_label = f"預設檔案：{os.path.basename(default_freq_list_path)}"
         except Exception as e:
             freq_list_error = f"無法讀取預設 Frequency List（{os.path.basename(default_freq_list_path)}）：{e}"
@@ -1500,12 +1674,21 @@ if mode_key == "WWAN":
 
     mvo5_target_col1, mvo5_target_col2, mvo5_target_col3 = st.columns([1, 1, 1])
     with mvo5_target_col1:
+        wwan_default_targets = get_default_role_target("WWAN")
         mvo5_tx_target = st.number_input(
-            "TX/TRP 目標值", value=23.0, step=0.5, format="%.2f", key="mvo5_tx_target"
+            "TX/TRP 目標值",
+            value=float(wwan_default_targets["tx"]),
+            step=0.5,
+            format="%.2f",
+            key="mvo5_tx_target",
         )
     with mvo5_target_col2:
         mvo5_rx_target = st.number_input(
-            "RX/TIS 目標值", value=-101.0, step=0.5, format="%.2f", key="mvo5_rx_target"
+            "RX/TIS 目標值",
+            value=float(wwan_default_targets["rx"]),
+            step=0.5,
+            format="%.2f",
+            key="mvo5_rx_target",
         )
     with mvo5_target_col3:
         st.write("")
@@ -1695,9 +1878,22 @@ if mode_key == "WLAN":
 
     wlan_target_col1, wlan_target_col2, wlan_target_col3 = st.columns([1, 1, 1])
     with wlan_target_col1:
-        wlan_tx_target = st.number_input("WLAN TX 目標值", value=23.0, step=0.5, format="%.2f", key="wlan_tx_target")
+        wlan_default_targets = get_default_role_target("WLAN")
+        wlan_tx_target = st.number_input(
+            "WLAN TX/TRP 目標值",
+            value=float(wlan_default_targets["tx"]),
+            step=0.5,
+            format="%.2f",
+            key="wlan_tx_target",
+        )
     with wlan_target_col2:
-        wlan_rx_target = st.number_input("WLAN RX 目標值", value=-101.0, step=0.5, format="%.2f", key="wlan_rx_target")
+        wlan_rx_target = st.number_input(
+            "WLAN RX/TIS 目標值",
+            value=float(wlan_default_targets["rx"]),
+            step=0.5,
+            format="%.2f",
+            key="wlan_rx_target",
+        )
     with wlan_target_col3:
         st.write(""); st.write("")
         wlan_build_clicked = st.button("🔎 比對 WLAN Frequency List 並試算補償", key="wlan_build_btn", disabled=freq_list_df is None)
