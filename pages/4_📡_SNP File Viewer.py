@@ -1,4 +1,4 @@
-﻿import os
+import os
 import re
 import tempfile
 from datetime import datetime
@@ -607,7 +607,8 @@ with file_col:
     with open_panel("📁 Files", key="panel_files"):
         uploaded_files = st.file_uploader(
             "Upload Touchstone Files",
-            type=["s1p", "s2p", "s3p", "s4p", "snp", "txt"],
+            # Support Touchstone files from S1P through S8P, plus generic SNP/TXT.
+            type=["s1p", "s2p", "s3p", "s4p", "s5p", "s6p", "s7p", "s8p", "snp", "txt"],
             accept_multiple_files=True,
         )
 with layout_col:
@@ -641,7 +642,7 @@ with smith_col:
         smith_height = st.slider("Smith Chart Height", 400, 900, 650, 50)
 
 if not uploaded_files:
-    st.info("請從上方 Files 面板上傳一個或多個 S1P / S2P / S3P / S4P 檔案。")
+    st.info("請從上方 Files 面板上傳一個或多個 S1P ~ S8P 檔案。")
     st.stop()
 
 # =========================================================
