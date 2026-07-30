@@ -40,8 +40,8 @@ st.markdown(
     <style>
     .block-container {padding-top: 1.1rem; padding-bottom: 2rem;}
     div[data-testid="stPopover"] > button {width: 100%;}
-    /* Make popover wider so Trace controls can be displayed side-by-side. */
-    div[data-testid="stPopoverBody"] {min-width: 760px; max-width: 92vw;}
+    /* Trace popover: narrow two-card layout, similar to compact instrument UI. */
+    div[data-testid="stPopoverBody"] {min-width: 620px; max-width: 680px;}
     .small-note {font-size: 0.88rem; color: #64748b;}
     .tool-title {font-weight: 700; color: #334155;}
     </style>
@@ -621,39 +621,43 @@ with trace_col:
         file_sparams_map = {}
         file_smith_sparams_map = {}
 
-        for file_name in selected_files:
-            network = network_dict[file_name]
-            available_sparams = get_sparameter_list(network.nports)
-            default_sparams = [s for s in ["S11", "S21"] if s in available_sparams]
-            if not default_sparams and available_sparams:
-                default_sparams = [available_sparams[0]]
+        trace_card_cols_per_row = 2
+        for row_start in range(0, len(selected_files), trace_card_cols_per_row):
+            row_files = selected_files[row_start:row_start + trace_card_cols_per_row]
+            row_cols = st.columns(trace_card_cols_per_row, gap="small")
 
-            with st.expander(f"Trace: {file_name}", expanded=True):
-                reflection_sparams = get_reflection_sparams(available_sparams)
-                smith_defaults = [s for s in ["S11"] if s in reflection_sparams]
-                if not smith_defaults and reflection_sparams:
-                    smith_defaults = [reflection_sparams[0]]
+            for col_idx, file_name in enumerate(row_files):
+                with row_cols[col_idx]:
+                    network = network_dict[file_name]
+                    available_sparams = get_sparameter_list(network.nports)
+                    default_sparams = [s for s in ["S11", "S21"] if s in available_sparams]
+                    if not default_sparams and available_sparams:
+                        default_sparams = [available_sparams[0]]
 
-                trace_select_col, smith_select_col = st.columns(2)
-
-                with trace_select_col:
-                    file_sparams_map[file_name] = st.multiselect(
-                        "Select S-Parameters",
-                        options=available_sparams,
-                        default=default_sparams,
-                        key=f"trace_sparams_{file_name}",
-                    )
-
-                with smith_select_col:
-                    if show_smith_chart:
-                        file_smith_sparams_map[file_name] = st.multiselect(
-                            "Select Smith Chart S-Parameters",
-                            options=reflection_sparams,
-                            default=smith_defaults,
-                            key=f"smith_sparams_{file_name}",
+                    with st.expander(f"Trace: {file_name}", expanded=True):
+                        file_sparams_map[file_name] = st.multiselect(
+                            "Select S-Parameters",
+                            options=available_sparams,
+                            default=default_sparams,
+                            key=f"trace_sparams_{file_name}",
                         )
-                    else:
-                        file_smith_sparams_map[file_name] = []
+
+                        reflection_sparams = get_reflection_sparams(available_sparams)
+                        smith_defaults = [s for s in ["S11"] if s in reflection_sparams]
+                        if not smith_defaults and reflection_sparams:
+                            smith_defaults = [reflection_sparams[0]]
+
+                        if show_smith_chart:
+                            file_smith_sparams_map[file_name] = st.multiselect(
+                                "Select Smith Chart S-Parameters",
+                                options=reflection_sparams,
+                                default=smith_defaults,
+                                key=f"smith_sparams_{file_name}",
+                            )
+                        else:
+                            file_smith_sparams_map[file_name] = []
+
+            # When the row has only one file, keep the empty second column unused.
 
         if not any(file_sparams_map.get(file_name) for file_name in selected_files):
             st.warning("請至少在一個檔案選擇一個 Main Plot S-Parameter。")
