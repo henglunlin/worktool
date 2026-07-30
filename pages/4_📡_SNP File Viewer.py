@@ -48,7 +48,7 @@ st.markdown(
 )
 
 st.title("SNP File Viewer")
-st.caption("?舀憭?SNP 瘥??race ?賊?撌脫????SNP 瑼??函??豢?嚗????獢?典?銝蝯?S-Parameter??)
+st.caption("支援多 SNP 比對。Trace 選項已改成每個 SNP 檔案獨立選擇，避免所有檔案共用同一組 S-Parameter。")
 
 # =========================================================
 # Utility Functions
@@ -296,7 +296,7 @@ def add_smith_grid(fig, axis_limit=1.25):
                 label = "-" + label
             fig.add_annotation(x=float(np.real(g_label)) * 1.06, y=float(np.imag(g_label)) * 1.06, text=label, showarrow=False, font=dict(size=12))
 
-    fig.add_annotation(x=1.04, y=0, text="??, showarrow=False, font=dict(size=18))
+    fig.add_annotation(x=1.04, y=0, text="∞", showarrow=False, font=dict(size=18))
     fig.add_annotation(x=-1.05, y=0, text="0.0", showarrow=False, font=dict(size=12))
     fig.update_xaxes(range=[-axis_limit, axis_limit], visible=False, scaleanchor="y", scaleratio=1, constrain="domain")
     fig.update_yaxes(range=[-axis_limit, axis_limit], visible=False, constrain="domain")
@@ -352,9 +352,9 @@ def build_interactive_smith_chart(network_dict, selected_files, file_smith_spara
                     f"<b>{file_name}</b><br>"
                     f"S-Parameter: {sparam}<br>"
                     f"Frequency: %{{customdata[0]:.6g}} {freq_unit}<br>"
-                    "? Real: %{customdata[1]:.6g}<br>"
-                    "? Imag: %{customdata[2]:.6g}<br>"
-                    "|?|: %{customdata[3]:.6g}<br>"
+                    "Γ Real: %{customdata[1]:.6g}<br>"
+                    "Γ Imag: %{customdata[2]:.6g}<br>"
+                    "|Γ|: %{customdata[3]:.6g}<br>"
                     "Phase: %{customdata[4]:.3f} deg<br>"
                     "z: %{customdata[5]:.3f} + j%{customdata[6]:.3f}<br>"
                     "Z: %{customdata[7]:.3f} + j%{customdata[8]:.3f} ohm<br>"
@@ -396,9 +396,9 @@ def build_interactive_smith_chart(network_dict, selected_files, file_smith_spara
                             f"{file_name} - {sparam}<br>"
                             f"Target: %{{customdata[0]:.6g}} {freq_unit}<br>"
                             f"Actual: %{{customdata[1]:.6g}} {freq_unit}<br>"
-                            "? Real: %{customdata[2]:.6g}<br>"
-                            "? Imag: %{customdata[3]:.6g}<br>"
-                            "|?|: %{customdata[4]:.6g}<br>"
+                            "Γ Real: %{customdata[2]:.6g}<br>"
+                            "Γ Imag: %{customdata[3]:.6g}<br>"
+                            "|Γ|: %{customdata[4]:.6g}<br>"
                             "Phase: %{customdata[5]:.3f} deg<br>"
                             "z: %{customdata[6]:.3f} + j%{customdata[7]:.3f}<br>"
                             "Z: %{customdata[8]:.3f} + j%{customdata[9]:.3f} ohm<br>"
@@ -520,14 +520,14 @@ def make_excel_bytes(network_dict, selected_files, file_sparams_map, data_type, 
 # =========================================================
 # Floating toolbar UI
 # =========================================================
-st.markdown("<span class='small-note'>Floating-style tool panels嚗iles / Layout / Markers / Smith / Traces / Range / Export</span>", unsafe_allow_html=True)
+st.markdown("<span class='small-note'>Floating-style tool panels：Files / Layout / Markers / Smith / Traces / Range / Export</span>", unsafe_allow_html=True)
 
 top_spacer, file_col, layout_col, marker_col, smith_col = st.columns([5.0, 1.05, 1.05, 1.05, 1.05])
 with top_spacer:
     st.markdown("<span class='tool-title'>SNP Viewer Tool Palette</span>", unsafe_allow_html=True)
 
 with file_col:
-    with open_panel("?? Files", key="panel_files"):
+    with open_panel("📁 Files", key="panel_files"):
         uploaded_files = st.file_uploader(
             "Upload Touchstone Files",
             type=["s1p", "s2p", "s3p", "s4p", "s5p", "s6p", "s7p", "s8p", "snp", "txt"],
@@ -535,7 +535,7 @@ with file_col:
         )
 
 with layout_col:
-    with open_panel("?? Layout", key="panel_layout"):
+    with open_panel("⚙️ Layout", key="panel_layout"):
         freq_unit = st.selectbox("Frequency Unit", ["Hz", "kHz", "MHz", "GHz"], index=2)
         freq_unit_scale = {"Hz": 1, "kHz": 1e3, "MHz": 1e6, "GHz": 1e9}[freq_unit]
         data_type = st.selectbox("Data Type", ["Magnitude dB", "Phase deg", "VSWR", "Return Loss", "Insertion Loss"], index=0)
@@ -547,7 +547,7 @@ with layout_col:
         y_axis_max_input = st.number_input("Y Axis Max", value=0.0, step=1.0, disabled=not y_axis_manual)
 
 with marker_col:
-    with open_panel("?? Markers", key="panel_markers"):
+    with open_panel("📍 Markers", key="panel_markers"):
         st.text_area(f"Marker Frequencies ({freq_unit})", key="marker_text_buffer", placeholder="Example: 2400, 2450, 2500")
         st.button("Update Markers", type="primary", use_container_width=True, on_click=update_markers_from_input)
         if st.session_state.applied_markers:
@@ -559,7 +559,7 @@ with marker_col:
         markers = st.session_state.applied_markers
 
 with smith_col:
-    with open_panel("?妣 Smith", key="panel_smith"):
+    with open_panel("🧭 Smith", key="panel_smith"):
         show_smith_chart = st.checkbox("Show Smith Chart", value=True)
         smith_freq_mode = st.selectbox("Smith Chart Frequency Range", ["Full Range", "Same as Main Plot", "Custom Range"], index=0)
         smith_normalize_to_50 = st.checkbox("Normalize Smith Chart to 50 ohm", value=True)
@@ -567,7 +567,7 @@ with smith_col:
         smith_height = st.slider("Smith Chart Height", 400, 900, 650, 50)
 
 if not uploaded_files:
-    st.info("隢?銝 Files ?Ｘ銝銝??憭?S1P ~ S8P 瑼???)
+    st.info("請從上方 Files 面板上傳一個或多個 S1P ~ S8P 檔案。")
     st.stop()
 
 # =========================================================
@@ -588,14 +588,14 @@ for uploaded_file in uploaded_files:
             "Z0 first point": str(network.z0[0] if hasattr(network, "z0") else "N/A"),
         })
     except Exception as e:
-        st.error(f"霈?仃??{uploaded_file.name}")
+        st.error(f"讀取失敗：{uploaded_file.name}")
         st.exception(e)
 
 if not network_dict:
-    st.error("瘝?隞颱?瑼???霈??)
+    st.error("沒有任何檔案成功讀取。")
     st.stop()
 
-st.success(f"??霈??{len(network_dict)} ??獢?)
+st.success(f"成功讀取 {len(network_dict)} 個檔案")
 with st.expander("File Information", expanded=False):
     st.dataframe(pd.DataFrame(file_info), use_container_width=True)
 
@@ -605,13 +605,13 @@ with st.expander("File Information", expanded=False):
 all_file_names = list(network_dict.keys())
 trace_spacer, trace_col, range_col, export_col, help_col = st.columns([5.6, 1.05, 1.05, 1.05, 1.05])
 with trace_spacer:
-    st.markdown("<span class='small-note'>Trace ?賊?撌脖? SNP 瑼???嚗???獢隞仿銝???Main Plot ??Smith Chart S-Parameters??/span>", unsafe_allow_html=True)
+    st.markdown("<span class='small-note'>Trace 選項已依 SNP 檔案分開：每個檔案可以選不同的 Main Plot 與 Smith Chart S-Parameters。</span>", unsafe_allow_html=True)
 
 with trace_col:
-    with open_panel("?? Traces", key="panel_traces"):
+    with open_panel("📈 Traces", key="panel_traces"):
         selected_files = st.multiselect("Select Files to Compare", options=all_file_names, default=all_file_names)
         if not selected_files:
-            st.warning("隢撠????獢?)
+            st.warning("請至少選擇一個檔案。")
             st.stop()
 
         st.divider()
@@ -650,7 +650,7 @@ with trace_col:
                     file_smith_sparams_map[file_name] = []
 
         if not any(file_sparams_map.get(file_name) for file_name in selected_files):
-            st.warning("隢撠銝??獢????Main Plot S-Parameter??)
+            st.warning("請至少在一個檔案選擇一個 Main Plot S-Parameter。")
             st.stop()
 
 # Fallback defaults if Streamlit rerun evaluates below before popover variables exist.
@@ -672,11 +672,11 @@ freq_min = float(np.nanmin(all_freq_values))
 freq_max = float(np.nanmax(all_freq_values))
 
 with range_col:
-    with open_panel("?? Range", key="panel_range"):
+    with open_panel("🔎 Range", key="panel_range"):
         filter_start = st.number_input(f"Start Frequency ({freq_unit})", value=freq_min, min_value=freq_min, max_value=freq_max)
         filter_stop = st.number_input(f"Stop Frequency ({freq_unit})", value=freq_max, min_value=freq_min, max_value=freq_max)
         if filter_start >= filter_stop:
-            st.error("Start Frequency 敹?撠 Stop Frequency??)
+            st.error("Start Frequency 必須小於 Stop Frequency。")
             st.stop()
         st.divider()
         st.caption("Smith Chart range mode is selected in the Smith panel. Custom start/stop appears below the Smith Chart.")
@@ -686,7 +686,7 @@ if "filter_start" not in locals():
 if "filter_stop" not in locals():
     filter_stop = freq_max
 if filter_start >= filter_stop:
-    st.error("Start Frequency 敹?撠 Stop Frequency??)
+    st.error("Start Frequency 必須小於 Stop Frequency。")
     st.stop()
 
 if st.session_state.smith_filter_start == 0.0 and st.session_state.smith_filter_stop == 0.0:
@@ -717,8 +717,8 @@ else:
 with export_col:
     export_panel_slot = st.empty()
     with export_panel_slot.container():
-        with open_panel("漎? Export", key="panel_export_pending"):
-            st.caption("皞?銝?鞈?銝哨?瑼?霈????????具?)
+        with open_panel("⬇️ Export", key="panel_export_pending"):
+            st.caption("準備下載資料中；檔案讀取完成後會自動啟用。")
             st.markdown("Download CSV")
             st.markdown("Download Excel")
             st.markdown("Download HTML")
@@ -726,15 +726,17 @@ with export_col:
             st.markdown("Download Smith PNG")
 
 with help_col:
-    with open_panel("??Help", key="panel_help"):
+    with open_panel("❓ Help", key="panel_help"):
         st.markdown(
             """
-            **Popover UI 隤芣?**
-            - **Files**嚗???Touchstone 瑼?
-            - **Layout**嚗??撘?擃 頠貊???            - **Traces**嚗??豢?獢???撠???SNP 瑼??函???Main Plot ??Smith Chart S-Parameter
-            - **Markers**嚗撓??Marker 銝行??            - **Smith**嚗mith Chart 閮剖?
-            - **Range**嚗蜓?? Smith Chart ?餌?蝭?
-            - **Export**嚗?頛?CSV / Excel / HTML / PNG
+            **Popover UI 說明**
+            - **Files**：上傳 Touchstone 檔案
+            - **Layout**：資料格式、圖高、Y 軸範圍
+            - **Traces**：先選檔案，再針對每個 SNP 檔案獨立選 Main Plot 與 Smith Chart S-Parameter
+            - **Markers**：輸入 Marker 並更新
+            - **Smith**：Smith Chart 設定
+            - **Range**：主圖與 Smith Chart 頻率範圍
+            - **Export**：下載 CSV / Excel / HTML / PNG
             """
         )
 
@@ -968,31 +970,31 @@ html_data = html_text.encode("utf-8")
 
 export_panel_slot.empty()
 with export_panel_slot.container():
-    with open_panel("??Export", key="panel_export_active"):
-        st.markdown("??鞈?撌脫??????臭誑蝡銝? CSV / Excel / HTML??)
+    with open_panel("✅ Export", key="panel_export_active"):
+        st.markdown("✅ 資料已準備完成，可以立即下載 CSV / Excel / HTML。")
         st.checkbox("Generate PNG exports (slower)", key="enable_png_export")
         if not st.session_state.enable_png_export:
-            st.caption("?箔?????PNG ?身銝?????暸敺???瑁?銝衣??PNG??)
+            st.caption("為了加速讀取，PNG 預設不預先產生；勾選後會重新執行並產生 PNG。")
 
-        st.download_button("??Download CSV", data=csv_data, file_name=f"snp_compare_result_{TODAY_MMDD}.csv", mime="text/csv", use_container_width=True, key="download_csv_active")
+        st.download_button("✅ Download CSV", data=csv_data, file_name=f"snp_compare_result_{TODAY_MMDD}.csv", mime="text/csv", use_container_width=True, key="download_csv_active")
         if excel_data is not None:
-            st.download_button("??Download Excel", data=excel_data, file_name=f"snp_compare_result_{TODAY_MMDD}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="download_excel_active")
+            st.download_button("✅ Download Excel", data=excel_data, file_name=f"snp_compare_result_{TODAY_MMDD}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="download_excel_active")
         else:
             st.button("Download Excel", disabled=True, use_container_width=True, key="download_excel_disabled_active")
 
-        st.download_button("??Download HTML", data=html_data, file_name=f"snp_compare_plot_{TODAY_MMDD}.html", mime="text/html", use_container_width=True, key="download_html_active")
+        st.download_button("✅ Download HTML", data=html_data, file_name=f"snp_compare_plot_{TODAY_MMDD}.html", mime="text/html", use_container_width=True, key="download_html_active")
 
         if png_data is not None:
-            st.download_button("??Download PNG", data=png_data, file_name=f"snp_compare_plot_{TODAY_MMDD}.png", mime="image/png", use_container_width=True, key="download_png_active")
+            st.download_button("✅ Download PNG", data=png_data, file_name=f"snp_compare_plot_{TODAY_MMDD}.png", mime="image/png", use_container_width=True, key="download_png_active")
         else:
             st.button("Download PNG", disabled=True, use_container_width=True, key="download_png_disabled_active")
-            st.caption("PNG ?芰???暸 Generate PNG exports嚗蒂蝣箄?撌脣?鋆?kaleido??)
+            st.caption("PNG 未產生：勾選 Generate PNG exports，並確認已安裝 kaleido。")
 
         if smith_png_data is not None:
-            st.download_button("??Download Smith PNG", data=smith_png_data, file_name=f"smith_chart_{TODAY_MMDD}.png", mime="image/png", use_container_width=True, key="download_smith_png_active")
+            st.download_button("✅ Download Smith PNG", data=smith_png_data, file_name=f"smith_chart_{TODAY_MMDD}.png", mime="image/png", use_container_width=True, key="download_smith_png_active")
         else:
             st.button("Smith PNG", disabled=True, use_container_width=True, key="download_smith_png_disabled_active")
-            st.caption("Smith PNG ?芰???暸 Generate PNG exports嚗蒂蝣箄? Smith Chart 撌脣??具?)
+            st.caption("Smith PNG 未產生：勾選 Generate PNG exports，並確認 Smith Chart 已啟用。")
 
 # =========================================================
 # Notes
@@ -1003,8 +1005,8 @@ with st.expander("Calculation Notes"):
         ### Smith Chart hover values
         Smith Chart line hover includes `z`, `Z`, and `y`:
         ```text
-        ? = Sii
-        z = (1 + ?) / (1 - ?)
+        Γ = Sii
+        z = (1 + Γ) / (1 - Γ)
         Z = z * Z0
         y = 1 / z
         ```
@@ -1019,7 +1021,7 @@ with st.expander("Calculation Notes"):
 
         ### VSWR
         ```text
-        VSWR = (1 + |?|) / (1 - |?|)
+        VSWR = (1 + |Γ|) / (1 - |Γ|)
         ```
 
         ### Return Loss
