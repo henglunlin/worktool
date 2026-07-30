@@ -40,6 +40,8 @@ st.markdown(
     <style>
     .block-container {padding-top: 1.1rem; padding-bottom: 2rem;}
     div[data-testid="stPopover"] > button {width: 100%;}
+    /* Make popover wider so Trace controls can be displayed side-by-side. */
+    div[data-testid="stPopoverBody"] {min-width: 760px; max-width: 92vw;}
     .small-note {font-size: 0.88rem; color: #64748b;}
     .tool-title {font-weight: 700; color: #334155;}
     </style>
@@ -627,27 +629,31 @@ with trace_col:
                 default_sparams = [available_sparams[0]]
 
             with st.expander(f"Trace: {file_name}", expanded=True):
-                file_sparams_map[file_name] = st.multiselect(
-                    "Select S-Parameters",
-                    options=available_sparams,
-                    default=default_sparams,
-                    key=f"trace_sparams_{file_name}",
-                )
-
                 reflection_sparams = get_reflection_sparams(available_sparams)
                 smith_defaults = [s for s in ["S11"] if s in reflection_sparams]
                 if not smith_defaults and reflection_sparams:
                     smith_defaults = [reflection_sparams[0]]
 
-                if show_smith_chart:
-                    file_smith_sparams_map[file_name] = st.multiselect(
-                        "Select Smith Chart S-Parameters",
-                        options=reflection_sparams,
-                        default=smith_defaults,
-                        key=f"smith_sparams_{file_name}",
+                trace_select_col, smith_select_col = st.columns(2)
+
+                with trace_select_col:
+                    file_sparams_map[file_name] = st.multiselect(
+                        "Select S-Parameters",
+                        options=available_sparams,
+                        default=default_sparams,
+                        key=f"trace_sparams_{file_name}",
                     )
-                else:
-                    file_smith_sparams_map[file_name] = []
+
+                with smith_select_col:
+                    if show_smith_chart:
+                        file_smith_sparams_map[file_name] = st.multiselect(
+                            "Select Smith Chart S-Parameters",
+                            options=reflection_sparams,
+                            default=smith_defaults,
+                            key=f"smith_sparams_{file_name}",
+                        )
+                    else:
+                        file_smith_sparams_map[file_name] = []
 
         if not any(file_sparams_map.get(file_name) for file_name in selected_files):
             st.warning("請至少在一個檔案選擇一個 Main Plot S-Parameter。")
